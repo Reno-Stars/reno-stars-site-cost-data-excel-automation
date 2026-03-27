@@ -48,14 +48,14 @@ Sheets contain payment rows (第一笔款/第二笔款/第三笔款) and summary
 4. For each match, find the first empty row where D/E/F/G are all empty (searching from row 2 up to 总开销)
 5. Write date label and worker name on every data row (even expense-only or material-only entries)
 6. Write hours, rate, and `=F*G` formula only when hours > 0
-7. Write gas+ticket to column I, materials to column K (overflow to next empty K row, bounded by summary row)
+7. Write gas+ticket to column I, materials to column K (always on the same row as the worker entry)
 8. If no empty rows remain, insert before 总开销 and update formulas on all three summary rows (总开销, 总价格, 利润率)
 
 ### Validation & Limits
 
 - `MAX_FILE_SIZE` (50 MB) is exported from `lib/excel-processor.ts` and used in both the processor and the API route
 - API route validates: `instanceof File`, `.xlsx` extension, file size, and `typeof` check for dateLabel
-- Material search is bounded by the 总开销 row — will never write into or past summary rows
+- Materials are always written to the same row as the worker entry
 
 ### Key Helpers (`lib/excel-processor.ts`)
 

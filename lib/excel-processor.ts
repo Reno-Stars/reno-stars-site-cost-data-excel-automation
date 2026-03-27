@@ -241,23 +241,9 @@ function writeEntryToSheet(
     row.getCell(9).value = otherExpenses; // I = other expenses
   }
 
-  // Add materials — same row if K is empty, otherwise find next empty K before summary
   if (entry.materials > 0) {
-    if (getCellNumber(row.getCell(11)) === 0) {
-      row.getCell(11).value = entry.materials; // K = material cost
-      row.getCell(12).value = `${worker.name}材料`; // L = note
-    } else {
-      const materialSearchEnd =
-        totalExpenseRow > 0 ? totalExpenseRow - 1 : sheet.rowCount;
-      for (let r = insertRow + 1; r <= materialSearchEnd; r++) {
-        const mRow = sheet.getRow(r);
-        if (getCellNumber(mRow.getCell(11)) === 0) {
-          mRow.getCell(11).value = entry.materials;
-          mRow.getCell(12).value = `${worker.name}材料`;
-          break;
-        }
-      }
-    }
+    row.getCell(11).value = entry.materials; // K = material cost
+    row.getCell(12).value = `${worker.name}材料`; // L = note
   }
 
   row.commit();

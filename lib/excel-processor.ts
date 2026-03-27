@@ -246,6 +246,7 @@ function writeEntryToSheet(
     if (getCellNumber(row.getCell(11)) === 0) {
       row.getCell(11).value = entry.materials; // K = material cost
       row.getCell(12).value = `${worker.name}材料`; // L = note
+      row.getCell(13).value = dateLabel; // M = date
     } else {
       const materialSearchEnd =
         totalExpenseRow > 0 ? totalExpenseRow - 1 : sheet.rowCount;
@@ -254,6 +255,7 @@ function writeEntryToSheet(
         if (getCellNumber(mRow.getCell(11)) === 0) {
           mRow.getCell(11).value = entry.materials;
           mRow.getCell(12).value = `${worker.name}材料`;
+          mRow.getCell(13).value = dateLabel;
           break;
         }
       }

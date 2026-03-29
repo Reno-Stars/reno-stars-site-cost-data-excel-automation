@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processFiles, MAX_FILE_SIZE } from "@/lib/excel-processor";
 
+/** Sanitize dateLabel to prevent Excel formula injection (=, +, -, @, tab, CR). */
+function sanitizeDateLabel(label: string): string {
+  return label.replace(/^[=+\-@\t\r]+/, "");
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -8,7 +13,7 @@ export async function POST(request: NextRequest) {
     const outputRaw = formData.get("output");
     const dateLabelRaw = formData.get("dateLabel");
     const dateLabel =
-      typeof dateLabelRaw === "string" ? dateLabelRaw.trim() : "";
+      typeof dateLabelRaw === "string" ? sanitizeDateLabel(dateLabelRaw.trim()) : "";
 
     if (!(inputRaw instanceof File) || !(outputRaw instanceof File)) {
       return NextResponse.json(
@@ -24,12 +29,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (inputRaw.size === 0 || outputRaw.size === 0) {
+      return NextResponse.json(
+        { error: "Uploaded files must not be empty" },
+        { status: 400 }
+      );
+    }
+
     if (inputRaw.size > MAX_FILE_SIZE || outputRaw.size > MAX_FILE_SIZE) {
       return NextResponse.json(
         {
           error: `File size must not exceed ${MAX_FILE_SIZE / 1024 / 1024} MB`,
         },
-        { status: 400 }
+        { status: 413 }
       );
     }
 
@@ -57,10 +69,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Processing error:", error);
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Failed to process files",
-      },
+      { error: "Failed to process files. Please check that both files are valid .xlsx files." },
       { status: 500 }
     );
   }

@@ -106,8 +106,7 @@ interface ProjectBlock {
 }
 
 interface DateRange {
-  startMonth: number;
-  endMonth: number;
+  month: number;
   year: number;
 }
 
@@ -213,17 +212,19 @@ export function parseInputFile(worksheet: ExcelJS.Worksheet): WorkerBlock[] {
 // NOT used for row availability — payment rows are available for worker data.
 const PAYMENT_LABELS = new Set(["第一笔款", "第二笔款", "第三笔款"]);
 
+const MONTH_ABBREVS: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+};
+
 function parseDateRange(name: string): DateRange | null {
-  const match = name.match(/^(\d{1,2})-(\d{1,2})\s+(\d{2})$/);
+  const match = name.match(/^([A-Za-z]{3})\s+(\d{2})$/);
   if (!match) return null;
-  const startMonth = parseInt(match[1], 10);
-  const endMonth = parseInt(match[2], 10);
-  if (startMonth < 1 || startMonth > 12 || endMonth < 1 || endMonth > 12)
-    return null;
+  const month = MONTH_ABBREVS[match[1].toLowerCase()];
+  if (!month) return null;
   return {
-    startMonth,
-    endMonth,
-    year: CENTURY_PREFIX + parseInt(match[3], 10),
+    month,
+    year: CENTURY_PREFIX + parseInt(match[2], 10),
   };
 }
 
@@ -237,10 +238,10 @@ function getDateRangeSheets(
       result.push({ sheet: ws, range });
     }
   }
-  // Sort most recent first (year desc, then endMonth desc)
+  // Sort most recent first (year desc, then month desc)
   result.sort((a, b) => {
     if (a.range.year !== b.range.year) return b.range.year - a.range.year;
-    return b.range.endMonth - a.range.endMonth;
+    return b.range.month - a.range.month;
   });
   return result;
 }

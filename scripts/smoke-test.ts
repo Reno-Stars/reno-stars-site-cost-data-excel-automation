@@ -40,9 +40,9 @@ async function main() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await (wb.xlsx as any).load(outputFile);
 
-  const s1 = wb.getWorksheet("1-3 26")!;
-  const s2 = wb.getWorksheet("9-12 25")!;
-  const s3 = wb.getWorksheet("4-6 25")!;
+  const s1 = wb.getWorksheet("Jan 26")!;
+  const s2 = wb.getWorksheet("Sep 25")!;
+  const s3 = wb.getWorksheet("Apr 25")!;
 
   function cellVal(sheet: ExcelJS.Worksheet, row: number, col: number): string {
     const cell = sheet.getRow(row).getCell(col);
@@ -134,11 +134,11 @@ async function main() {
   dumpRow("老赵 @ 53 (第一笔款 row)", s1, 97);
 
   // ── Older sheets ──
-  console.log("── Sheet '9-12 25': 9000 Ash Grove (第一笔款 row used) ──");
+  console.log("── Sheet 'Sep 25': 9000 Ash Grove (第一笔款 row used) ──");
   dumpRow("K=300 packed to row 2", s2, 2);
   dumpRow("阿华 @ 9000 (第一笔款 row)", s2, 3);
 
-  console.log("── Sheet '4-6 25': 6033 Williams Rd (第一笔款 row used) ──");
+  console.log("── Sheet 'Apr 25': 6033 Williams Rd (第一笔款 row used) ──");
   dumpRow("K=1200 packed to row 2", s3, 2);
   dumpRow("Chris @ 6033 (第一笔款 row)", s3, 3);
 
@@ -196,10 +196,10 @@ async function main() {
     ["53 K=500 packed to row 96", cellVal(s1, 96, 11) === "500"],
 
     // Older sheets — 第一笔款 row 3 used, materials packed to row 2
-    ["9000→'9-12 25' row 3, D=3月下", cellVal(s2, 3, 4) === "3月下"],
-    ["9000→'9-12 25' row 3, E=阿华", cellVal(s2, 3, 5) === "阿华"],
-    ["6033→'4-6 25' row 3, D=3月下", cellVal(s3, 3, 4) === "3月下"],
-    ["6033→'4-6 25' row 3, E=Chris", cellVal(s3, 3, 5) === "Chris"],
+    ["9000→'Sep 25' row 3, D=3月下", cellVal(s2, 3, 4) === "3月下"],
+    ["9000→'Sep 25' row 3, E=阿华", cellVal(s2, 3, 5) === "阿华"],
+    ["6033→'Apr 25' row 3, D=3月下", cellVal(s3, 3, 4) === "3月下"],
+    ["6033→'Apr 25' row 3, E=Chris", cellVal(s3, 3, 5) === "Chris"],
 
     // Non-date sheets
     ["Balance untouched", cellVal(bal, 1, 1) === "Income"],

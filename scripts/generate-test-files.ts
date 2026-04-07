@@ -19,14 +19,14 @@
  * 11. Multiple entries for the same block (tests sequential empty-row search)
  *
  * OUTPUT:
- *  1. Multiple date-range sheets sorted by recency (1-3 26, 9-12 25, 4-6 25)
+ *  1. Multiple date-range sheets sorted by recency (Jan 26, Sep 25, Apr 25)
  *  2. Non-date sheets that should be skipped (Balance, T4a)
  *  3. Block with existing data (partially filled)
  *  4. Block with data in col A only (tests fallback matching)
  *  5. Nearly full block (only 1 empty row — second entry triggers insertion)
  *  6. Payment rows with existing material data in K/L/M
  *  7. Shared formulas in col H (=F*G)
- *  8. Block that only exists in older sheet (9-12 25)
+ *  8. Block that only exists in older sheet (Sep 25)
  *  9. Empty template block (客户名+项目 placeholder in col C)
  * 10. Block with address "1530" to test false-positive against input "53"
  */
@@ -159,8 +159,8 @@ function writeBlock(
 async function generateOutputFile(): Promise<void> {
   const wb = new ExcelJS.Workbook();
 
-  // ── Sheet 1: "1-3 26" (most recent) ──
-  const s1 = wb.addWorksheet("1-3 26");
+  // ── Sheet 1: "Jan 26" (most recent) ──
+  const s1 = wb.addWorksheet("Jan 26");
 
   // Block 1: "7217 Bridlewood" — partially filled (3 data rows used, tests normal match on col C)
   writeBlock(s1, {
@@ -245,8 +245,8 @@ async function generateOutputFile(): Promise<void> {
   });
   // Block 6: rows 120-142
 
-  // ── Sheet 2: "9-12 25" (older) ──
-  const s2 = wb.addWorksheet("9-12 25");
+  // ── Sheet 2: "Sep 25" (older) ──
+  const s2 = wb.addWorksheet("Sep 25");
 
   // Block 1: "9000 Ash Grove" — only in this older sheet (tests sheet ordering)
   writeBlock(s2, {
@@ -268,8 +268,8 @@ async function generateOutputFile(): Promise<void> {
     bufferRows: 10,
   });
 
-  // ── Sheet 3: "4-6 25" (oldest) ──
-  const s3 = wb.addWorksheet("4-6 25");
+  // ── Sheet 3: "Apr 25" (oldest) ──
+  const s3 = wb.addWorksheet("Apr 25");
 
   writeBlock(s3, {
     headerRow: 1,
@@ -334,7 +334,7 @@ async function generateInputFile(): Promise<void> {
   // Case 1: Normal match — hours + materials + gas + ticket → "7217" matches "7217 Bridlewood"
   // Case 2: Materials only → "7217" again (tests material on separate row)
   // Case 5: All zeros → should be skipped
-  // Case 8: Match in older sheet → "9000" matches "9000 Ash Grove Crescent" in "9-12 25"
+  // Case 8: Match in older sheet → "9000" matches "9000 Ash Grove Crescent" in "Sep 25"
   // Case 9: No match → "9999" is unmatched
   addRow({ B: "阿华", C: 14, D: "7217", E: 8, G: 200, H: 30, I: 15 });
   addRow({ D: "7217", G: 150 }); // materials only for same address
@@ -356,7 +356,7 @@ async function generateInputFile(): Promise<void> {
   addRow({ B: "Total" });
 
   // ── Worker 3: Chris ($18/hr) ──
-  // Case: match in oldest sheet → "6033" matches "6033 Williams Rd" in "4-6 25"
+  // Case: match in oldest sheet → "6033" matches "6033 Williams Rd" in "Apr 25"
   addRow({ B: "Chris", C: 18, D: "6033", E: 24, G: 1200, H: 50, I: 20 });
   addRow({ B: "Total" });
 
@@ -375,7 +375,7 @@ function printExpectedResults(): void {
 ║                                                                  ║
 ║  Workers parsed: 3 (阿华, 老赵, Chris)                          ║
 ║  Rows added: 8  (materials-only entries don't create rows)      ║
-║  Matched sheets: "1-3 26", "9-12 25", "4-6 25"                 ║
+║  Matched sheets: "Jan 26", "Sep 25", "Apr 25"                 ║
 ║  Unmatched addresses: "8888"                                     ║
 ║                                                                  ║
 ║  Skipped entries (all zeros): "9999" (阿华)                      ║
@@ -388,50 +388,50 @@ function printExpectedResults(): void {
 ╠══════════════════════════════════════════════════════════════════╣
 ║                                                                  ║
 ║  阿华 @ 7217 (hrs=8, mat=200, gas=30, tkt=15)                   ║
-║    → Sheet "1-3 26", Block 1 ("7217 Bridlewood")                ║
+║    → Sheet "Jan 26", Block 1 ("7217 Bridlewood")                ║
 ║    → Inserted after last worker row 3 → row 4:                   ║
 ║      D=dateLabel, E=阿华, F=8, G=14, H=F*G, I=45,              ║
 ║      K=200, L=阿华材料, M=dateLabel                              ║
 ║                                                                  ║
 ║  阿华 @ 7217 (mat=150 only)                                     ║
-║    → Sheet "1-3 26", Block 1 — materials-only, no new row       ║
+║    → Sheet "Jan 26", Block 1 — materials-only, no new row       ║
 ║    → Writes K=150, L=阿华材料, M=dateLabel to first empty K     ║
 ║      cell (第二笔款 row)                                         ║
 ║                                                                  ║
 ║  阿华 @ 5880 (hrs=6)                                            ║
-║    → Sheet "1-3 26", Block 3 ("5880 Dover")                     ║
+║    → Sheet "Jan 26", Block 3 ("5880 Dover")                     ║
 ║    → Inserted after last worker: D=dateLabel, E=阿华, F=6, G=14 ║
 ║                                                                  ║
 ║  阿华 @ 9999 — ALL ZEROS → SKIPPED                              ║
 ║                                                                  ║
 ║  阿华 @ 9000 (hrs=10, mat=300)                                  ║
-║    → Sheet "9-12 25", Block 1 ("9000 Ash Grove Crescent")       ║
+║    → Sheet "Sep 25", Block 1 ("9000 Ash Grove Crescent")       ║
 ║    → First empty row in that block                               ║
 ║                                                                  ║
 ║  阿华 @ 8888 (hrs=5) → UNMATCHED                                ║
 ║                                                                  ║
 ║  老赵 @ 7217 (gas=25, tkt=10)                                   ║
-║    → Sheet "1-3 26", Block 1 ("7217 Bridlewood")                ║
+║    → Sheet "Jan 26", Block 1 ("7217 Bridlewood")                ║
 ║    → Inserted after last worker: D=dateLabel, E=老赵, I=35      ║
 ║                                                                  ║
 ║  老赵 @ 53 (hrs=12, mat=500)                                    ║
-║    → Sheet "1-3 26", Block 5 ("53 Maple Ave")  ← NOT Block 2!  ║
+║    → Sheet "Jan 26", Block 5 ("53 Maple Ave")  ← NOT Block 2!  ║
 ║    → First empty row: D=dateLabel, E=老赵, F=12, G=13,          ║
 ║      K=500, L=老赵材料                                           ║
 ║                                                                  ║
 ║  老赵 @ 302 (hrs=20)                                            ║
-║    → Sheet "1-3 26", Block 4 (col A fallback → "Marco Project") ║
+║    → Sheet "Jan 26", Block 4 (col A fallback → "Marco Project") ║
 ║    → First empty row: D=dateLabel, E=老赵, F=20, G=13           ║
 ║                                                                  ║
 ║  老赵 @ 5880 (hrs=15, mat=800, gas=40)                          ║
-║    → Sheet "1-3 26", Block 3 ("5880 Dover")                     ║
+║    → Sheet "Jan 26", Block 3 ("5880 Dover")                     ║
 ║    → Block full! Inserts after last worker row                   ║
 ║    → D=dateLabel, E=老赵, F=15, G=13, I=40,                    ║
 ║      K=800, L=老赵材料                                           ║
 ║    → 总开销 SUM ranges expanded, 总价格/利润率 refs shifted      ║
 ║                                                                  ║
 ║  Chris @ 6033 (hrs=24, mat=1200, gas=50, tkt=20)                ║
-║    → Sheet "4-6 25", Block 1 ("6033 Williams Rd")               ║
+║    → Sheet "Apr 25", Block 1 ("6033 Williams Rd")               ║
 ║    → First empty row: D=dateLabel, E=Chris, F=24, G=18,         ║
 ║      H=F*G, I=70, K=1200, L=Chris材料                           ║
 ║                                                                  ║
@@ -441,8 +441,8 @@ function printExpectedResults(): void {
 ║                                                                  ║
 ║  1. "53" matched Block 5 (53 Maple Ave), NOT Block 2 (1530 Oak) ║
 ║  2. "302" matched via col A fallback → Block 4                   ║
-║  3. "9000" matched in older sheet "9-12 25" (not in "1-3 26")   ║
-║  4. "7217" matched in "1-3 26" (not "9-12 25" where it exists)  ║
+║  3. "9000" matched in older sheet "Sep 25" (not in "Jan 26")   ║
+║  4. "7217" matched in "Jan 26" (not "Sep 25" where it exists)  ║
 ║  5. Block 3 (5880) insertion: new row after last worker, ok      ║
 ║  6. Balance and T4a sheets untouched                             ║
 ║  7. "9999" (all zeros) was skipped entirely                      ║

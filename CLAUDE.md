@@ -33,7 +33,7 @@ Next.js 16 app (React 19, TypeScript, Tailwind CSS 4) that migrates construction
 
 ### Data Flow
 
-1. **Client** (`app/page.tsx`, client component) — upload UI with two file drop zones + date label input, sends FormData to API, displays processing summary (per-entry details, employee totals, site totals), triggers file download
+1. **Client** (`app/page.tsx`, client component) — upload UI with two file drop zones + date label input, sends FormData to API, displays processing summary (per-entry details, employee totals, site totals, input warnings), triggers file download
 2. **API Route** (`app/api/process/route.ts`) — receives input file, output file, and date label; calls processor; returns JSON with metadata + base64-encoded output file
 3. **Excel Processor** (`lib/excel-processor.ts`) — core logic using ExcelJS (server-only, marked in `next.config.ts` as `serverExternalPackages`)
 
@@ -61,16 +61,16 @@ Multiple project names appear in column C within a single block (client names, s
 
 ### Processing Logic
 
-1. Parse input into `WorkerBlock[]` — each block has worker name, rate, and per-address entries
+1. Parse input into `WorkerBlock[]` with warnings — each block has worker name, rate, and per-address entries; rows with data but missing address or worker context generate warnings
 2. Get date-range sheets sorted most recent first; pre-compute project blocks per sheet
 3. Skip entries where all four data fields are zero (hours, materials, gas, ticket)
 4. For each entry, search sheets (most recent first) for a block whose col C values match the address code (word-boundary match via regex `\b`); fallback to col A values
 5. Break shared formulas in col H before processing (converts shared formula clones to explicit `=Fn*Gn` to prevent ExcelJS errors when rows shift)
 6. Within matched block, find first row where D (date) and E (worker name) are both empty — payment rows are available (payment info in A/B is independent of worker data in D/E/F/G/H/I); rows with existing dates are project info rows, not available for new workers; material data (K) is independent and does not affect worker placement
-7. Materials-only entries (hours=0, gas=0, ticket=0, materials>0) write to the first empty K cell in the block without creating a new data row
+7. Materials-only entries (hours=0, gas=0, ticket=0, materials>0) write to the first empty K cell in the block; if no empty K cell exists, insert a new row before 总开销
 8. For non-materials-only entries: write col D = date label, col E = worker name (col C is never written)
 9. Write hours, rate only when hours > 0; preserve existing =F*G formula in col H
-10. Write gas+ticket to col I, materials to col K (search from `dataStartRow` to pack contiguously; overflow to next empty K row within block)
+10. Write gas+ticket to col I, materials to col K (search from `dataStartRow` to pack contiguously; if no empty K cell in block, insert a new row before 总开销)
 11. If no rows with empty D+E in entire block (including payment and buffer rows) → insert before 总开销, add explicit =F*G to col H, update summary formulas, shift 总价格/利润率 references, and shift row indices for all subsequent blocks on the same sheet
 
 ### Validation & Limits
@@ -106,19 +106,19 @@ Multiple project names appear in column C within a single block (client names, s
 - `breakSharedFormulasInColH(sheet)` — converts all shared formula clones/masters in col H to explicit `=Fn*Gn` formulas (prevents ExcelJS errors on row shifts)
 - `fixFormulasAfterSplice(sheet, spliceAt)` — shifts all formula references on the sheet after a row insertion at `spliceAt`; handles leftover shared formulas in col H
 - `findOrCreateInsertRow(sheet, block, allBlocks)` — searches entire block for rows where D and E are both empty (including payment and buffer rows); inserts before 总开销 only if no empty D+E rows exist
-- `writeMaterialToBlock(sheet, searchFromRow, totalExpenseRow, workerName, materials, dateLabel)` — writes material cost to first empty K cell from `searchFromRow`; returns true if written
+- `writeMaterialToBlock(sheet, block, allBlocks, workerName, materials, dateLabel)` — writes material cost to first empty K cell in block; inserts a new row before 总开销 if no empty K cell exists
 - `writeEntryToBlock(sheet, block, allBlocks, worker, entry, dateLabel)` — writes a single worker entry into a project block; shifts subsequent blocks when inserting rows
-- `computeCostSummaries(workers, unmatchedAddresses)` — computes per-worker and per-site cost breakdowns (extracted from `processFiles`)
+- `computeCostSummaries(workers, unmatchedAddresses)` — computes per-worker and per-site cost breakdowns; excludes unmatched and all-zero entries; splits gas from ticket; filters out workers with zero matched total
 - `processWorkerEntries(workers, dateSheets, sheetBlocks, dateLabel)` — main worker entry processing loop (extracted from `processFiles`); iterates workers/entries, matches to blocks, writes data
 
 ### Exported Types (`lib/excel-processor.ts`)
 
 - `WorkerEntry` — per-address entry: address, hours, materials, gas, ticket
 - `WorkerBlock` — worker name, rate, and entries array
-- `CostSummary` — base: labor, materials, other, total
+- `CostSummary` — base: labor, materials, gas, other (ticket), total
 - `WorkerTotal extends CostSummary` — adds name and rate
 - `SiteTotal extends CostSummary` — adds address
-- `ProcessResult` — workers, matchedSheets, unmatchedAddresses, rowsAdded, droppedMaterials, workerTotals, siteTotals
+- `ProcessResult` — workers, matchedSheets, unmatchedAddresses, rowsAdded, warnings, workerTotals, siteTotals
 
 ## Key Constraints
 

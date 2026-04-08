@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo, memo } from "react";
+import React, { useState, useCallback, useMemo, memo } from "react";
 import type { ProcessResult } from "@/lib/excel-processor";
 
 interface ProcessApiResponse extends ProcessResult {
@@ -170,6 +170,7 @@ export default function Home() {
     return {
       labor: result.workerTotals.reduce((s, w) => s + w.labor, 0),
       materials: result.workerTotals.reduce((s, w) => s + w.materials, 0),
+      gas: result.workerTotals.reduce((s, w) => s + w.gas, 0),
       other: result.workerTotals.reduce((s, w) => s + w.other, 0),
       total: result.workerTotals.reduce((s, w) => s + w.total, 0),
     };
@@ -185,6 +186,7 @@ export default function Home() {
     return {
       labor: result.siteTotals.reduce((s, st) => s + st.labor, 0),
       materials: result.siteTotals.reduce((s, st) => s + st.materials, 0),
+      gas: result.siteTotals.reduce((s, st) => s + st.gas, 0),
       other: result.siteTotals.reduce((s, st) => s + st.other, 0),
       total: result.siteTotals.reduce((s, st) => s + st.total, 0),
     };
@@ -324,11 +326,16 @@ export default function Home() {
                 </div>
               )}
 
-              {result.droppedMaterials > 0 && (
-                <div role="alert" className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-                  <p className="font-semibold text-orange-800">
-                    {result.droppedMaterials} material cost{result.droppedMaterials > 1 ? "s" : ""} could not be written (no empty K cell in block)
+              {result.warnings.length > 0 && (
+                <div role="alert" className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <p className="font-semibold text-red-800">
+                    Input data warnings:
                   </p>
+                  <ul className="text-red-700 list-disc list-inside mt-1">
+                    {result.warnings.map((w, i) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                  </ul>
                 </div>
               )}
 
@@ -355,42 +362,98 @@ export default function Home() {
                       <th scope="col" className="text-left p-2">Rate ($/hr)</th>
                       <th scope="col" className="text-left p-2">Address</th>
                       <th scope="col" className="text-right p-2">Hours</th>
+                      <th scope="col" className="text-right p-2">Labor</th>
                       <th scope="col" className="text-right p-2">Materials</th>
-                      <th scope="col" className="text-right p-2">Other</th>
+                      <th scope="col" className="text-right p-2">Gas</th>
+                      <th scope="col" className="text-right p-2">Ticket</th>
+                      <th scope="col" className="text-right p-2 font-bold">Subtotal</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {result.workers.map((worker, wi) =>
-                      worker.entries.map((entry, ei) => (
-                        <tr
-                          key={`${wi}-${ei}`}
-                          className={`border-b ${
-                            ei === 0 ? "bg-white" : "bg-gray-50/50"
-                          }`}
-                        >
-                          <td className="p-2 font-medium">
-                            {ei === 0 ? worker.name : ""}
-                          </td>
-                          <td className="p-2">
-                            {ei === 0 ? `$${worker.rate}` : ""}
-                          </td>
-                          <td className="p-2 font-mono">{entry.address}</td>
-                          <td className="p-2 text-right">
-                            {entry.hours || "-"}
-                          </td>
-                          <td className="p-2 text-right">
-                            {entry.materials
-                              ? `$${entry.materials.toFixed(2)}`
-                              : "-"}
-                          </td>
-                          <td className="p-2 text-right">
-                            {entry.gas + entry.ticket > 0
-                              ? `$${(entry.gas + entry.ticket).toFixed(2)}`
-                              : "-"}
-                          </td>
+                    {result.workers.map((worker, wi) => {
+                      const totHours = worker.entries.reduce((s, e) => s + e.hours, 0);
+                      const totLabor = worker.entries.reduce((s, e) => s + e.hours * worker.rate, 0);
+                      const totMat = worker.entries.reduce((s, e) => s + e.materials, 0);
+                      const totGas = worker.entries.reduce((s, e) => s + e.gas, 0);
+                      const totTkt = worker.entries.reduce((s, e) => s + e.ticket, 0);
+                      const totAll = totLabor + totMat + totGas + totTkt;
+                      return (
+                        <React.Fragment key={wi}>
+                          {worker.entries.map((entry, ei) => {
+                            const labor = entry.hours * worker.rate;
+                            const rowTotal = labor + entry.materials + entry.gas + entry.ticket;
+                            return (
+                              <tr
+                                key={`${wi}-${ei}`}
+                                className={`border-b ${
+                                  ei === 0 ? "bg-white" : "bg-gray-50/50"
+                                }`}
+                              >
+                                <td className="p-2 font-medium">
+                                  {ei === 0 ? worker.name : ""}
+                                </td>
+                                <td className="p-2">
+                                  {ei === 0 ? `$${worker.rate}` : ""}
+                                </td>
+                                <td className="p-2 font-mono">{entry.address}</td>
+                                <td className="p-2 text-right">
+                                  {entry.hours || "-"}
+                                </td>
+                                <td className="p-2 text-right">
+                                  {labor > 0 ? `$${labor.toFixed(2)}` : "-"}
+                                </td>
+                                <td className="p-2 text-right">
+                                  {entry.materials
+                                    ? `$${entry.materials.toFixed(2)}`
+                                    : "-"}
+                                </td>
+                                <td className="p-2 text-right">
+                                  {entry.gas > 0
+                                    ? `$${entry.gas.toFixed(2)}`
+                                    : "-"}
+                                </td>
+                                <td className="p-2 text-right">
+                                  {entry.ticket > 0
+                                    ? `$${entry.ticket.toFixed(2)}`
+                                    : "-"}
+                                </td>
+                                <td className="p-2 text-right font-semibold">
+                                  {rowTotal > 0 ? `$${rowTotal.toFixed(2)}` : "-"}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          <tr className="border-b-2 border-gray-300 bg-blue-50/50 font-semibold text-sm">
+                            <td className="p-2" colSpan={3}>{worker.name} Subtotal</td>
+                            <td className="p-2 text-right">{totHours || "-"}</td>
+                            <td className="p-2 text-right">{totLabor ? `$${totLabor.toFixed(2)}` : "-"}</td>
+                            <td className="p-2 text-right">{totMat ? `$${totMat.toFixed(2)}` : "-"}</td>
+                            <td className="p-2 text-right">{totGas ? `$${totGas.toFixed(2)}` : "-"}</td>
+                            <td className="p-2 text-right">{totTkt ? `$${totTkt.toFixed(2)}` : "-"}</td>
+                            <td className="p-2 text-right font-bold">${totAll.toFixed(2)}</td>
+                          </tr>
+                        </React.Fragment>
+                      );
+                    })}
+                    {(() => {
+                      const grandHours = result.workers.reduce((s, w) => s + w.entries.reduce((s2, e) => s2 + e.hours, 0), 0);
+                      const grandLabor = result.workers.reduce((s, w) => s + w.entries.reduce((s2, e) => s2 + e.hours * w.rate, 0), 0);
+                      const grandMat = result.workers.reduce((s, w) => s + w.entries.reduce((s2, e) => s2 + e.materials, 0), 0);
+                      const grandGas = result.workers.reduce((s, w) => s + w.entries.reduce((s2, e) => s2 + e.gas, 0), 0);
+                      const grandTkt = result.workers.reduce((s, w) => s + w.entries.reduce((s2, e) => s2 + e.ticket, 0), 0);
+                      const grandAll = grandLabor + grandMat + grandGas + grandTkt;
+                      return (
+                        <tr className="border-t-2 border-gray-300 bg-gray-50 font-bold">
+                          <td className="p-2" colSpan={3}>Grand Total</td>
+                          <td className="p-2 text-right">{grandHours || "-"}</td>
+                          <td className="p-2 text-right">${grandLabor.toFixed(2)}</td>
+                          <td className="p-2 text-right">${grandMat.toFixed(2)}</td>
+                          <td className="p-2 text-right">${grandGas.toFixed(2)}</td>
+                          <td className="p-2 text-right">${grandTkt.toFixed(2)}</td>
+                          <td className="p-2 text-right">${grandAll.toFixed(2)}</td>
                         </tr>
-                      ))
-                    )}
+                      );
+                    })()}
                   </tbody>
                 </table>
               </div>
@@ -405,10 +468,10 @@ export default function Home() {
                     <thead>
                       <tr className="border-b bg-gray-50">
                         <th scope="col" className="text-left p-2">Employee</th>
-                        <th scope="col" className="text-left p-2">Rate</th>
                         <th scope="col" className="text-right p-2">Labor</th>
                         <th scope="col" className="text-right p-2">Materials</th>
-                        <th scope="col" className="text-right p-2">Other</th>
+                        <th scope="col" className="text-right p-2">Gas</th>
+                        <th scope="col" className="text-right p-2">Ticket</th>
                         <th scope="col" className="text-right p-2 font-bold">Total</th>
                       </tr>
                     </thead>
@@ -416,17 +479,18 @@ export default function Home() {
                       {result.workerTotals.map((wt) => (
                         <tr key={wt.name} className="border-b">
                           <td className="p-2 font-medium">{wt.name}</td>
-                          <td className="p-2">${wt.rate}/hr</td>
                           <td className="p-2 text-right">${wt.labor.toFixed(2)}</td>
                           <td className="p-2 text-right">${wt.materials.toFixed(2)}</td>
+                          <td className="p-2 text-right">${wt.gas.toFixed(2)}</td>
                           <td className="p-2 text-right">${wt.other.toFixed(2)}</td>
                           <td className="p-2 text-right font-bold">${wt.total.toFixed(2)}</td>
                         </tr>
                       ))}
                       <tr className="border-t-2 border-gray-300 bg-gray-50 font-bold">
-                        <td className="p-2" colSpan={2}>Grand Total</td>
+                        <td className="p-2">Grand Total</td>
                         <td className="p-2 text-right">${workerGrandTotals.labor.toFixed(2)}</td>
                         <td className="p-2 text-right">${workerGrandTotals.materials.toFixed(2)}</td>
+                        <td className="p-2 text-right">${workerGrandTotals.gas.toFixed(2)}</td>
                         <td className="p-2 text-right">${workerGrandTotals.other.toFixed(2)}</td>
                         <td className="p-2 text-right">${workerGrandTotals.total.toFixed(2)}</td>
                       </tr>
@@ -447,7 +511,8 @@ export default function Home() {
                         <th scope="col" className="text-left p-2">Site (Address Code)</th>
                         <th scope="col" className="text-right p-2">Labor</th>
                         <th scope="col" className="text-right p-2">Materials</th>
-                        <th scope="col" className="text-right p-2">Other</th>
+                        <th scope="col" className="text-right p-2">Gas</th>
+                        <th scope="col" className="text-right p-2">Ticket</th>
                         <th scope="col" className="text-right p-2 font-bold">Total</th>
                       </tr>
                     </thead>
@@ -457,6 +522,7 @@ export default function Home() {
                             <td className="p-2 font-mono">{st.address}</td>
                             <td className="p-2 text-right">${st.labor.toFixed(2)}</td>
                             <td className="p-2 text-right">${st.materials.toFixed(2)}</td>
+                            <td className="p-2 text-right">${st.gas.toFixed(2)}</td>
                             <td className="p-2 text-right">${st.other.toFixed(2)}</td>
                             <td className="p-2 text-right font-bold">${st.total.toFixed(2)}</td>
                           </tr>
@@ -465,6 +531,7 @@ export default function Home() {
                         <td className="p-2">Grand Total</td>
                         <td className="p-2 text-right">${siteGrandTotals.labor.toFixed(2)}</td>
                         <td className="p-2 text-right">${siteGrandTotals.materials.toFixed(2)}</td>
+                        <td className="p-2 text-right">${siteGrandTotals.gas.toFixed(2)}</td>
                         <td className="p-2 text-right">${siteGrandTotals.other.toFixed(2)}</td>
                         <td className="p-2 text-right">${siteGrandTotals.total.toFixed(2)}</td>
                       </tr>

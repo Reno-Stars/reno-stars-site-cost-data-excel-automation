@@ -234,16 +234,22 @@ async function generateOutputFile(): Promise<void> {
   });
   // Block 5: rows 95-117
 
-  // Block 6 starts at row 120: empty template block (客户名+项目 placeholder)
+  // Block 6 starts at row 120: "4444 Test Lane" — ALL K cells filled (tests material row insertion)
   writeBlock(s1, {
     headerRow: 120,
     dataRows: [
-      { C: "客户名+项目" },
+      { C: "4444 Test Lane", D: "1月上", E: "阿华", F: 10, G: 14, K: 100, L: "材料1" },
+      { C: "4444 Test Lane", D: "1月中", E: "老赵", F: 5, G: 13, K: 200, L: "材料2" },
     ],
-    payments: [0, 0, 0],
-    bufferRows: 15,
+    payments: [1000, 0, 0],
+    paymentMaterials: [
+      { row: 0, K: 300, L: "定金材料", M: "1月" },
+      { row: 1, K: 400, L: "材料3", M: "2月" },
+      { row: 2, K: 500, L: "材料4", M: "3月" },
+    ],
+    bufferRows: 0,
   });
-  // Block 6: rows 120-142
+  // Block 6: rows 120-128 (all K cells occupied, 0 buffer)
 
   // ── Sheet 2: "Sep 25" (older) ──
   const s2 = wb.addWorksheet("Sep 25");
@@ -339,6 +345,7 @@ async function generateInputFile(): Promise<void> {
   addRow({ B: "阿华", C: 14, D: "7217", E: 8, G: 200, H: 30, I: 15 });
   addRow({ D: "7217", G: 150 }); // materials only for same address
   addRow({ D: "5880", E: 6 }); // hours only → "5880 Dover"
+  addRow({ E: 3 }); // WARNING: has hours but no address (D empty)
   addRow({ D: "9999" }); // all zeros — should be skipped
   addRow({ D: "9000", E: 10, G: 300 }); // match in older sheet
   addRow({ D: "8888", E: 5 }); // unmatched address
@@ -357,7 +364,9 @@ async function generateInputFile(): Promise<void> {
 
   // ── Worker 3: Chris ($18/hr) ──
   // Case: match in oldest sheet → "6033" matches "6033 Williams Rd" in "Apr 25"
+  // Case: materials-only to block with ALL K cells filled → triggers row insertion
   addRow({ B: "Chris", C: 18, D: "6033", E: 24, G: 1200, H: 50, I: 20 });
+  addRow({ D: "4444", G: 600 }); // materials-only → Block 6, all K full → inserts row
   addRow({ B: "Total" });
 
   const buffer = await wb.xlsx.writeBuffer();
@@ -377,11 +386,13 @@ function printExpectedResults(): void {
 ║  Rows added: 8  (materials-only entries don't create rows)      ║
 ║  Matched sheets: "Jan 26", "Sep 25", "Apr 25"                 ║
 ║  Unmatched addresses: "8888"                                     ║
+║  Warnings: 1 (阿华 has hours but no address at row 5)           ║
 ║                                                                  ║
 ║  Skipped entries (all zeros): "9999" (阿华)                      ║
 ║                                                                  ║
 ║  NOTE: Col C is NEVER written on new rows.                       ║
-║  Materials-only entries write K/L/M to first empty K cell only.  ║
+║  Materials-only entries write K/L/M to first empty K cell;       ║
+║  if no empty K cell exists, inserts a new row before 总开销.     ║
 ║                                                                  ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║  ENTRY-BY-ENTRY BREAKDOWN                                        ║
@@ -435,6 +446,12 @@ function printExpectedResults(): void {
 ║    → First empty row: D=dateLabel, E=Chris, F=24, G=18,         ║
 ║      H=F*G, I=70, K=1200, L=Chris材料                           ║
 ║                                                                  ║
+║  Chris @ 4444 (mat=600 only)                                     ║
+║    → Sheet "Jan 26", Block 6 ("4444 Test Lane")                 ║
+║    → ALL K cells occupied → inserts row before 总开销            ║
+║    → New row: K=600, L=Chris材料, M=dateLabel                    ║
+║    → 总开销 shifted from row 126 to row 127                      ║
+║                                                                  ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║  KEY EDGE CASES TO VERIFY IN EXCEL                               ║
 ╠══════════════════════════════════════════════════════════════════╣
@@ -451,6 +468,9 @@ function printExpectedResults(): void {
 ║ 10. Shared formulas in col H preserved on existing rows          ║
 ║ 11. Col C is never written on new data rows                      ║
 ║ 12. Materials-only entries write to empty K cell, no new row     ║
+║ 13. Materials-only to full-K block inserts row before 总开销    ║
+║ 14. Missing address in input generates warning (not silent skip)║
+║ 15. Worker totals exclude unmatched entries, split gas/ticket   ║
 ║                                                                  ║
 ╚══════════════════════════════════════════════════════════════════╝
 `);

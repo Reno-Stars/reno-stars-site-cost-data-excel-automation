@@ -31,6 +31,11 @@ async function main() {
   console.log(`Rows added: ${result.rowsAdded}`);
   console.log(`Matched sheets: ${result.matchedSheets.join(", ")}`);
   console.log(`Unmatched addresses: ${result.unmatchedAddresses.join(", ") || "(none)"}`);
+  console.log(`Warnings: ${result.warnings.length > 0 ? result.warnings.join("; ") : "(none)"}`);
+  console.log(`Worker totals: ${result.workerTotals.length}`);
+  for (const wt of result.workerTotals) {
+    console.log(`  ${wt.name}: labor=$${wt.labor}, mat=$${wt.materials}, gas=$${wt.gas}, ticket=$${wt.other}, total=$${wt.total}`);
+  }
 
   writeFileSync(join(ROOT, "test-output-result.xlsx"), outputFile);
   console.log("\n✓ Saved test-output-result.xlsx for manual inspection\n");
@@ -79,6 +84,8 @@ async function main() {
   //   Row 56: E=老赵, Row 57: Richmond (D/E empty, K=78.62), Row 58: E=阿华, Row 59: E=老赵
   // Block 4 (302 Marco): header=70, data 71, payments 72-74, buffer 75-89, 总开销=90
   // Block 5 (53 Maple): header=95, data 96, payments 97-99, buffer 100-114, 总开销=115
+  // Block 6 (4444 Test Lane): header=120, data 121-122, payments 123-125, NO buffer, 总开销=126
+  //   ALL K cells occupied (100,200,300,400,500) — materials-only inserts row before 总开销
   //
   // BEHAVIOR:
   //   - Worker data (D/E/F/G/H/I) and material data (K/L/M) are INDEPENDENT.
@@ -98,6 +105,7 @@ async function main() {
   //   No insertion, no shift. K=800 packed to row 58.
   // Block 4: Row 72 (第一笔款, D/E empty) → 老赵. No shift.
   // Block 5: K=500 packed to row 96. Row 97 (第一笔款, D/E empty) → 老赵. No shift.
+  // Block 6: All K cells full → Chris mat=600 inserts row before 总开销. 总开销 shifts 126→127.
   // Older sheets: Payment row 3 (第一笔款, D/E empty) used. Materials packed to row 2.
 
   console.log("=== CELL VERIFICATION ===\n");
@@ -141,6 +149,11 @@ async function main() {
   console.log("── Sheet 'Apr 25': 6033 Williams Rd (第一笔款 row used) ──");
   dumpRow("K=1200 packed to row 2", s3, 2);
   dumpRow("Chris @ 6033 (第一笔款 row)", s3, 3);
+
+  // ── Block 6: material row insertion (all K full) ──
+  console.log("── Block 6: 4444 Test Lane (all K full → material row inserted) ──");
+  dumpRow("Inserted material row", s1, 126);
+  dumpRow("总开销 shifted to row 127", s1, 127);
 
   // Non-date sheets
   const bal = wb.getWorksheet("Balance")!;
@@ -201,9 +214,35 @@ async function main() {
     ["6033→'Apr 25' row 3, D=3月下", cellVal(s3, 3, 4) === "3月下"],
     ["6033→'Apr 25' row 3, E=Chris", cellVal(s3, 3, 5) === "Chris"],
 
+    // Block 6: material row insertion (all K cells full → inserts before 总开销)
+    ["4444 mat K=600 inserted at row 126", cellVal(s1, 126, 11) === "600"],
+    ["4444 mat L=Chris材料 at row 126", cellVal(s1, 126, 12) === "Chris材料"],
+    ["4444 mat M=3月下 at row 126", cellVal(s1, 126, 13) === "3月下"],
+    ["4444 总开销 shifted to row 127", cellVal(s1, 127, 1) === "总开销"],
+
     // Non-date sheets
     ["Balance untouched", cellVal(bal, 1, 1) === "Income"],
     ["T4a untouched", cellVal(t4a, 1, 1) === "所有人的"],
+
+    // Warnings for missing fields
+    ["1 warning generated", result.warnings.length === 1],
+    ["Warning mentions missing address", result.warnings[0]?.includes("D列") === true],
+
+    // Worker totals: exclude unmatched, split gas/ticket
+    ["workerTotals has 3 workers", result.workerTotals.length === 3],
+    // 阿华: 7217(8*14=112)+5880(6*14=84)+9000(10*14=140)=336 labor; 8888 excluded
+    ["阿华 labor=336", result.workerTotals[0]?.labor === 336],
+    ["阿华 materials=650", result.workerTotals[0]?.materials === 650],
+    ["阿华 gas=30", result.workerTotals[0]?.gas === 30],
+    ["阿华 other(ticket)=15", result.workerTotals[0]?.other === 15],
+    // 老赵: 53(12*13=156)+302(20*13=260)+5880(15*13=195)=611 labor
+    ["老赵 labor=611", result.workerTotals[1]?.labor === 611],
+    ["老赵 gas=65", result.workerTotals[1]?.gas === 65],
+    // Chris: 6033(24*18=432) labor; mat=1200+600=1800
+    ["Chris labor=432", result.workerTotals[2]?.labor === 432],
+    ["Chris materials=1800", result.workerTotals[2]?.materials === 1800],
+    ["Chris gas=50", result.workerTotals[2]?.gas === 50],
+    ["Chris other(ticket)=20", result.workerTotals[2]?.other === 20],
   ];
 
   let passed = 0;

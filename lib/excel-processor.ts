@@ -17,6 +17,7 @@ export interface WorkerBlock {
 export interface CostSummary {
   labor: number;
   materials: number;
+  gas: number;
   other: number;
   total: number;
 }
@@ -35,7 +36,7 @@ export interface ProcessResult {
   matchedSheets: string[];
   unmatchedAddresses: string[];
   rowsAdded: number;
-  droppedMaterials: number;
+  warnings: string[];
   workerTotals: WorkerTotal[];
   siteTotals: SiteTotal[];
 }
@@ -152,8 +153,9 @@ async function loadWorkbook(buffer: ArrayBuffer): Promise<ExcelJS.Workbook> {
 
 // --- Input parsing ---
 
-export function parseInputFile(worksheet: ExcelJS.Worksheet): WorkerBlock[] {
+export function parseInputFile(worksheet: ExcelJS.Worksheet): { workers: WorkerBlock[]; warnings: string[] } {
   const workers: WorkerBlock[] = [];
+  const warnings: string[] = [];
   let currentWorker: WorkerBlock | null = null;
 
   worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
@@ -166,6 +168,7 @@ export function parseInputFile(worksheet: ExcelJS.Worksheet): WorkerBlock[] {
     const gVal = getCellNumber(row.getCell(IN_COL.MATERIALS));
     const hVal = getCellNumber(row.getCell(IN_COL.GAS));
     const iVal = getCellNumber(row.getCell(IN_COL.TICKET));
+    const hasData = eVal > 0 || gVal > 0 || hVal > 0 || iVal > 0;
 
     // Check if this is a "Total" row
     if (bVal === "Total") {
@@ -187,6 +190,24 @@ export function parseInputFile(worksheet: ExcelJS.Worksheet): WorkerBlock[] {
           gas: hVal,
           ticket: iVal,
         });
+      } else if (hasData) {
+        warnings.push(`第${rowNumber}行: ${bVal} 有数据但缺少工地地址(D列)`);
+      }
+      return;
+    }
+
+    // Row has data but no address — flag as warning
+    if (!dVal && currentWorker) {
+      if (hasData) {
+        warnings.push(`第${rowNumber}行: ${currentWorker.name} 有数据但缺少工地地址(D列)`);
+      }
+      return;
+    }
+
+    // Row has address but no worker context
+    if (dVal && !currentWorker) {
+      if (hasData) {
+        warnings.push(`第${rowNumber}行: 工地${dVal}有数据但缺少工人信息(B/C列)`);
       }
       return;
     }
@@ -203,7 +224,7 @@ export function parseInputFile(worksheet: ExcelJS.Worksheet): WorkerBlock[] {
     }
   });
 
-  return workers;
+  return { workers, warnings };
 }
 
 // --- Date-range sheet helpers ---
@@ -522,25 +543,27 @@ function setMaterialCells(
   row.getCell(OUT_COL.MAT_DATE).value = dateLabel;
 }
 
-/** Write material cost to the first empty K cell within the block. Returns true if written. */
+/** Write material cost to the first empty K cell within the block, inserting a row if needed. */
 function writeMaterialToBlock(
   sheet: ExcelJS.Worksheet,
-  searchFromRow: number,
-  totalExpenseRow: number,
+  block: ProjectBlock,
+  allBlocks: ProjectBlock[],
   workerName: string,
   materials: number,
   dateLabel: string
-): boolean {
-  for (let r = searchFromRow; r < totalExpenseRow; r++) {
+): void {
+  for (let r = block.dataStartRow; r < block.totalExpenseRow; r++) {
     if (isCellEmpty(sheet.getRow(r).getCell(OUT_COL.MATERIAL))) {
       setMaterialCells(sheet.getRow(r), materials, workerName, dateLabel);
-      return true;
+      return;
     }
   }
-  return false;
+  // No empty K cell — insert a new row before 总开销
+  const insertAt = block.totalExpenseRow;
+  spliceBlockRow(sheet, block, allBlocks, insertAt);
+  setMaterialCells(sheet.getRow(insertAt), materials, workerName, dateLabel);
 }
 
-/** Returns true if material data was dropped due to no empty K cell. */
 function writeEntryToBlock(
   sheet: ExcelJS.Worksheet,
   block: ProjectBlock,
@@ -548,7 +571,7 @@ function writeEntryToBlock(
   worker: WorkerBlock,
   entry: WorkerEntry,
   dateLabel: string
-): boolean {
+): void {
   const insertRow = findOrCreateInsertRow(sheet, block, allBlocks);
 
   // Write the data row
@@ -574,16 +597,12 @@ function writeEntryToBlock(
     row.getCell(OUT_COL.OTHER).value = entry.gas + entry.ticket;
   }
 
-  let materialDropped = false;
   if (entry.materials > 0) {
     // Search from top of block to pack materials contiguously in K column
-    materialDropped = !writeMaterialToBlock(
-      sheet, block.dataStartRow, block.totalExpenseRow, worker.name, entry.materials, dateLabel
-    );
+    writeMaterialToBlock(sheet, block, allBlocks, worker.name, entry.materials, dateLabel);
   }
 
   row.commit();
-  return materialDropped;
 }
 
 // --- Cost summary computation ---
@@ -592,27 +611,33 @@ function computeCostSummaries(
   workers: WorkerBlock[],
   unmatchedAddresses: Set<string>
 ): { workerTotals: WorkerTotal[]; siteTotals: SiteTotal[] } {
+  // Worker totals only include matched entries; omit workers with no matched data
   const workerTotals: WorkerTotal[] = workers.map((w) => {
     let labor = 0;
     let materials = 0;
+    let gas = 0;
     let other = 0;
     for (const e of w.entries) {
+      if (e.hours === 0 && e.materials === 0 && e.gas === 0 && e.ticket === 0) continue;
+      if (unmatchedAddresses.has(e.address)) continue;
       labor += e.hours * w.rate;
       materials += e.materials;
-      other += e.gas + e.ticket;
+      gas += e.gas;
+      other += e.ticket;
     }
-    return { name: w.name, rate: w.rate, labor, materials, other, total: labor + materials + other };
-  });
+    return { name: w.name, rate: w.rate, labor, materials, gas, other, total: labor + materials + gas + other };
+  }).filter((wt) => wt.total > 0);
 
-  const siteMap = new Map<string, { labor: number; materials: number; other: number }>();
+  const siteMap = new Map<string, { labor: number; materials: number; gas: number; other: number }>();
   for (const w of workers) {
     for (const e of w.entries) {
       if (e.hours === 0 && e.materials === 0 && e.gas === 0 && e.ticket === 0) continue;
       if (unmatchedAddresses.has(e.address)) continue;
-      const existing = siteMap.get(e.address) || { labor: 0, materials: 0, other: 0 };
+      const existing = siteMap.get(e.address) || { labor: 0, materials: 0, gas: 0, other: 0 };
       existing.labor += e.hours * w.rate;
       existing.materials += e.materials;
-      existing.other += e.gas + e.ticket;
+      existing.gas += e.gas;
+      existing.other += e.ticket;
       siteMap.set(e.address, existing);
     }
   }
@@ -620,8 +645,9 @@ function computeCostSummaries(
     address,
     labor: s.labor,
     materials: s.materials,
+    gas: s.gas,
     other: s.other,
-    total: s.labor + s.materials + s.other,
+    total: s.labor + s.materials + s.gas + s.other,
   }));
 
   return { workerTotals, siteTotals };
@@ -634,11 +660,10 @@ function processWorkerEntries(
   dateSheets: { sheet: ExcelJS.Worksheet; range: DateRange }[],
   sheetBlocks: Map<ExcelJS.Worksheet, ProjectBlock[]>,
   dateLabel: string
-): { matchedSheets: Set<string>; unmatchedAddresses: Set<string>; rowsAdded: number; droppedMaterials: number } {
+): { matchedSheets: Set<string>; unmatchedAddresses: Set<string>; rowsAdded: number } {
   const matchedSheets = new Set<string>();
   const unmatchedAddresses = new Set<string>();
   let rowsAdded = 0;
-  let droppedMaterials = 0;
 
   for (const worker of workers) {
     for (const entry of worker.entries) {
@@ -659,14 +684,10 @@ function processWorkerEntries(
             entry.hours === 0 && entry.gas === 0 && entry.ticket === 0 && entry.materials > 0;
 
           if (isMaterialsOnly) {
-            const written = writeMaterialToBlock(
-              sheet, block.dataStartRow, block.totalExpenseRow, worker.name, entry.materials, dateLabel
-            );
-            if (!written) droppedMaterials++;
+            writeMaterialToBlock(sheet, block, blocks, worker.name, entry.materials, dateLabel);
           } else {
-            const dropped = writeEntryToBlock(sheet, block, blocks, worker, entry, dateLabel);
+            writeEntryToBlock(sheet, block, blocks, worker, entry, dateLabel);
             rowsAdded++;
-            if (dropped) droppedMaterials++;
           }
 
           found = true;
@@ -680,7 +701,7 @@ function processWorkerEntries(
     }
   }
 
-  return { matchedSheets, unmatchedAddresses, rowsAdded, droppedMaterials };
+  return { matchedSheets, unmatchedAddresses, rowsAdded };
 }
 
 // --- Main processing ---
@@ -708,7 +729,7 @@ export async function processFiles(
     throw new Error("Input file has no worksheets");
   }
 
-  const workers = parseInputFile(inputWs);
+  const { workers, warnings } = parseInputFile(inputWs);
 
   const outputWb = await loadWorkbook(outputBuffer);
 
@@ -730,7 +751,7 @@ export async function processFiles(
     sheetBlocks.set(sheet, findProjectBlocks(sheet));
   }
 
-  const { matchedSheets, unmatchedAddresses, rowsAdded, droppedMaterials } =
+  const { matchedSheets, unmatchedAddresses, rowsAdded } =
     processWorkerEntries(workers, dateSheets, sheetBlocks, dateLabel);
 
   const { workerTotals, siteTotals } = computeCostSummaries(workers, unmatchedAddresses);
@@ -743,7 +764,7 @@ export async function processFiles(
       matchedSheets: Array.from(matchedSheets),
       unmatchedAddresses: Array.from(unmatchedAddresses),
       rowsAdded,
-      droppedMaterials,
+      warnings,
       workerTotals,
       siteTotals,
     },
